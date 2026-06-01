@@ -1,0 +1,34 @@
+name: neonine_login
+description: A modern agricultural services app connecting farmers with service providers.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Pinput - beautiful OTP input boxes
+  pinput: ^5.0.0
+
+  # Google Fonts - for premium typography
+  google_fonts: ^6.2.1
+
+  cupertino_icons: ^1.0.8
+  shared_preferences: ^2.5.5
+  http: ^1.6.0
+
+  # Location & Maps
+  geolocator: ^13.0.2
+  geocoding: ^3.0.0
+  google_maps_flutter: ^2.10.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

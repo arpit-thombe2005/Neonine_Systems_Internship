@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1029277683614",
+    "project_id": "neonineloginpage",
+    "storage_bucket": "neonineloginpage.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1029277683614:android:dc8573c7de76ec09d6108f",
+        "android_client_info": {
+          "package_name": "com.neonine.neonine_login"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB_X4tDbf2HkIaNeGUhGFr0iaAc-wxmoxk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
