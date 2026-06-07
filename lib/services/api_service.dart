@@ -8,7 +8,7 @@ class ApiService {
   // ─── Backend URL ──────────────────────────────────────────────────────────
   // For physical Android devices connected via USB, we set up ADB port forwarding: adb reverse tcp:3000 tcp:3000
   // This allows the app to communicate using 'localhost:3000' directly.
-  static const String _baseUrl = 'http://localhost:3000/api';
+  static const String _baseUrl = 'https://neonine-systems-internship-backend.onrender.com/api';
 
   // Timeout duration for API calls
   static const Duration _timeout = Duration(seconds: 10);

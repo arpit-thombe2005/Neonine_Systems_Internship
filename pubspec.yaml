@@ -1,7 +1,7 @@
 name: neonine_login
 description: A modern agricultural services app connecting farmers with service providers.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

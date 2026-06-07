@@ -25,7 +25,7 @@ class _FarmerHomePageState extends State<FarmerHomePage>
   double? _longitude;
 
   GoogleMapController? _mapController;
-  final Set<Marker> _markers = {};
+  Set<Marker> _markers = {};
   List<Map<String, dynamic>> _nearbyProviders = [];
   List<Map<String, dynamic>> _filteredProviders = [];
 
@@ -34,6 +34,33 @@ class _FarmerHomePageState extends State<FarmerHomePage>
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
+
+  // Dark mode style for Google Maps to match the app's dark theme
+  static const String _darkMapStyle = '''
+[
+  {"elementType":"geometry","stylers":[{"color":"#212121"}]},
+  {"elementType":"labels.icon","stylers":[{"visibility":"off"}]},
+  {"elementType":"labels.text.fill","stylers":[{"color":"#757575"}]},
+  {"elementType":"labels.text.stroke","stylers":[{"color":"#212121"}]},
+  {"featureType":"administrative","elementType":"geometry","stylers":[{"color":"#757575"}]},
+  {"featureType":"administrative.country","elementType":"labels.text.fill","stylers":[{"color":"#9e9e9e"}]},
+  {"featureType":"administrative.land_parcel","stylers":[{"visibility":"off"}]},
+  {"featureType":"administrative.locality","elementType":"labels.text.fill","stylers":[{"color":"#bdbdbd"}]},
+  {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#757575"}]},
+  {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#181818"}]},
+  {"featureType":"poi.park","elementType":"labels.text.fill","stylers":[{"color":"#616161"}]},
+  {"featureType":"poi.park","elementType":"labels.text.stroke","stylers":[{"color":"#1b1b1b"}]},
+  {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#2c2c2c"}]},
+  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#8a8a8a"}]},
+  {"featureType":"road.arterial","elementType":"geometry","stylers":[{"color":"#373737"}]},
+  {"featureType":"road.highway","elementType":"geometry","stylers":[{"color":"#3c3c3c"}]},
+  {"featureType":"road.highway.controlled_access","elementType":"geometry","stylers":[{"color":"#4e4e4e"}]},
+  {"featureType":"road.local","elementType":"labels.text.fill","stylers":[{"color":"#616161"}]},
+  {"featureType":"transit","elementType":"labels.text.fill","stylers":[{"color":"#757575"}]},
+  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#000000"}]},
+  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#3d3d3d"}]}
+]
+''';
 
   @override
   void initState() {
@@ -128,31 +155,32 @@ class _FarmerHomePageState extends State<FarmerHomePage>
   }
 
   void _updateMarkers() {
-    _markers.clear();
+    final Set<Marker> newMarkers = {};
 
-    // Add farmer's own location marker
+    // Add farmer's own location marker (blue)
     if (_latitude != null && _longitude != null) {
-      _markers.add(
+      newMarkers.add(
         Marker(
           markerId: const MarkerId('my_location'),
           position: LatLng(_latitude!, _longitude!),
           infoWindow: const InfoWindow(title: 'You are here'),
-          icon:
-              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueAzure),
         ),
       );
     }
 
-    // Add service provider markers
-    for (final provider in _filteredProviders) {
+    // Add service provider markers (green)
+    for (int i = 0; i < _filteredProviders.length; i++) {
+      final provider = _filteredProviders[i];
       final lat = provider['latitude'] as double?;
       final lng = provider['longitude'] as double?;
       if (lat != null && lng != null) {
         final name = provider['full_name'] ?? 'Provider';
         final serviceName = provider['service_name'] ?? '';
-        _markers.add(
+        newMarkers.add(
           Marker(
-            markerId: MarkerId(provider['user_id'] ?? name),
+            markerId: MarkerId('provider_$i'),
             position: LatLng(lat, lng),
             infoWindow: InfoWindow(
               title: name,
@@ -164,6 +192,8 @@ class _FarmerHomePageState extends State<FarmerHomePage>
         );
       }
     }
+
+    _markers = newMarkers;
   }
 
   void _onSearchChanged(String query) {
@@ -184,6 +214,10 @@ class _FarmerHomePageState extends State<FarmerHomePage>
       }
       _updateMarkers();
     });
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
   }
 
   @override
@@ -334,20 +368,18 @@ class _FarmerHomePageState extends State<FarmerHomePage>
                             )
                           : (_latitude != null && _longitude != null)
                               ? GoogleMap(
+                                  onMapCreated: _onMapCreated,
                                   initialCameraPosition: CameraPosition(
                                     target: LatLng(_latitude!, _longitude!),
                                     zoom: 13,
                                   ),
                                   markers: _markers,
-                                  myLocationEnabled: true,
+                                  style: _darkMapStyle,
+                                  myLocationEnabled: false,
                                   myLocationButtonEnabled: false,
                                   zoomControlsEnabled: false,
                                   mapToolbarEnabled: false,
-                                  onMapCreated: (controller) {
-                                    _mapController = controller;
-                                    // Apply dark map style
-                                    controller.setMapStyle(_darkMapStyle);
-                                  },
+                                  compassEnabled: false,
                                 )
                               : Center(
                                   child: Column(
@@ -419,30 +451,4 @@ class _FarmerHomePageState extends State<FarmerHomePage>
     );
   }
 
-  // Dark theme map style
-  static const String _darkMapStyle = '''
-[
-  {"elementType": "geometry", "stylers": [{"color": "#212121"}]},
-  {"elementType": "labels.icon", "stylers": [{"visibility": "off"}]},
-  {"elementType": "labels.text.fill", "stylers": [{"color": "#757575"}]},
-  {"elementType": "labels.text.stroke", "stylers": [{"color": "#212121"}]},
-  {"featureType": "administrative", "elementType": "geometry", "stylers": [{"color": "#757575"}]},
-  {"featureType": "administrative.country", "elementType": "labels.text.fill", "stylers": [{"color": "#9e9e9e"}]},
-  {"featureType": "administrative.land_parcel", "stylers": [{"visibility": "off"}]},
-  {"featureType": "administrative.locality", "elementType": "labels.text.fill", "stylers": [{"color": "#bdbdbd"}]},
-  {"featureType": "poi", "elementType": "labels.text.fill", "stylers": [{"color": "#757575"}]},
-  {"featureType": "poi.park", "elementType": "geometry", "stylers": [{"color": "#181818"}]},
-  {"featureType": "poi.park", "elementType": "labels.text.fill", "stylers": [{"color": "#616161"}]},
-  {"featureType": "poi.park", "elementType": "labels.text.stroke", "stylers": [{"color": "#1b1b1b"}]},
-  {"featureType": "road", "elementType": "geometry.fill", "stylers": [{"color": "#2c2c2c"}]},
-  {"featureType": "road", "elementType": "labels.text.fill", "stylers": [{"color": "#8a8a8a"}]},
-  {"featureType": "road.arterial", "elementType": "geometry", "stylers": [{"color": "#373737"}]},
-  {"featureType": "road.highway", "elementType": "geometry", "stylers": [{"color": "#3c3c3c"}]},
-  {"featureType": "road.highway.controlled_access", "elementType": "geometry", "stylers": [{"color": "#4e4e4e"}]},
-  {"featureType": "road.local", "elementType": "labels.text.fill", "stylers": [{"color": "#616161"}]},
-  {"featureType": "transit", "elementType": "labels.text.fill", "stylers": [{"color": "#757575"}]},
-  {"featureType": "water", "elementType": "geometry", "stylers": [{"color": "#000000"}]},
-  {"featureType": "water", "elementType": "labels.text.fill", "stylers": [{"color": "#3d3d3d"}]}
-]
-''';
 }
