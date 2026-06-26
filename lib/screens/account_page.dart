@@ -227,26 +227,68 @@ class _AccountPageState extends State<AccountPage>
 
                         const SizedBox(height: 4),
 
-                        // User type badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: isProvider
-                                ? const Color(0xFF4AE54A).withOpacity(0.1)
-                                : Colors.white.withOpacity(0.06),
-                            borderRadius: BorderRadius.circular(100),
-                          ),
-                          child: Text(
-                            isProvider ? tr('service_provider') : tr('farmer'),
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: isProvider
-                                  ? const Color(0xFF4AE54A)
-                                  : Colors.white54,
-                              fontWeight: FontWeight.w600,
+                        // User type & KYC badges
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: isProvider
+                                    ? const Color(0xFF4AE54A).withOpacity(0.1)
+                                    : Colors.white.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(100),
+                              ),
+                              child: Text(
+                                userType == 'service_provider'
+                                    ? tr('service_provider')
+                                    : tr('farmer'),
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: isProvider
+                                      ? const Color(0xFF4AE54A)
+                                      : Colors.white54,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
-                          ),
+                            if (_userData?['aadhaar_hash'] != null && (_userData?['aadhaar_hash'] as String).isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF4AE54A).withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(100),
+                                  border: Border.all(
+                                    color: const Color(0xFF4AE54A).withOpacity(0.4),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.verified_user_rounded,
+                                      color: Color(0xFF4AE54A),
+                                      size: 14,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'KYC VERIFIED',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: const Color(0xFF4AE54A),
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
 
                         const SizedBox(height: 32),
@@ -276,7 +318,9 @@ class _AccountPageState extends State<AccountPage>
                               ),
                               _buildDetailRow(
                                 tr('user_type').toUpperCase(),
-                                isProvider ? tr('service_provider') : tr('farmer'),
+                                userType == 'service_provider'
+                                    ? tr('service_provider')
+                                    : tr('farmer'),
                                 Icons.badge_outlined,
                               ),
                               _buildDetailRow(

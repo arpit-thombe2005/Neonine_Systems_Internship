@@ -158,7 +158,7 @@ class _RegistrationPageState extends State<RegistrationPage>
       final result = await _apiService.registerUser(
         fullName: _nameController.text.trim(),
         phoneNumber: widget.mobile,
-        userType: _selectedUserType == 'farmer' ? 'farmer' : 'service_provider',
+        userType: _selectedUserType,
         aadhaarNumber: aadhaar,
         villageArea: _villageController.text.trim().isNotEmpty
             ? _villageController.text.trim()

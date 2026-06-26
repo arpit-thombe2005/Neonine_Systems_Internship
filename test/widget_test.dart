@@ -15,6 +15,6 @@ void main() {
     await tester.pumpWidget(const NeonineApp(isLoggedIn: false));
 
     // Verify that the login page is loaded by checking for the welcome text.
-    expect(find.text('Welcome\nback.'), findsOneWidget);
+    expect(find.text('WELCOME BACK'), findsOneWidget);
   });
 }

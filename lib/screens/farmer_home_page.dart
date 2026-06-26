@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/auth_service.dart';
@@ -232,6 +233,10 @@ class _FarmerHomePageState extends State<FarmerHomePage>
   void _showRequestServiceDialog(Map<String, dynamic> provider) async {
     final messageController = TextEditingController();
     bool isSubmitting = false;
+    final selectedEquipmentNames = <String>{};
+
+    List<Map<String, dynamic>> providerEquipment = [];
+    bool isLoadingEquipment = true;
 
     showModalBottomSheet(
       context: context,
@@ -240,6 +245,24 @@ class _FarmerHomePageState extends State<FarmerHomePage>
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            Future<void> fetchProviderEquipment() async {
+              try {
+                final providerUserId = provider['user_id'] ?? provider['id'];
+                final list = await _apiService.getEquipmentList(providerId: providerUserId);
+                setModalState(() {
+                  providerEquipment = list;
+                  isLoadingEquipment = false;
+                });
+              } catch (e) {
+                debugPrint('Error loading provider equipment: $e');
+                setModalState(() => isLoadingEquipment = false);
+              }
+            }
+
+            if (isLoadingEquipment) {
+              fetchProviderEquipment();
+            }
+
             return Padding(
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -359,6 +382,109 @@ class _FarmerHomePageState extends State<FarmerHomePage>
                       ),
                       const SizedBox(height: 18),
                     ],
+
+                    // Available Equipment Listing
+                    Text(
+                      'Available Equipment & Rates:',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: Colors.white38,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (isLoadingEquipment)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: Center(
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white38)),
+                          ),
+                        ),
+                      )
+                    else if (providerEquipment.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          'No equipment registered by provider yet.',
+                          style: GoogleFonts.inter(fontSize: 13, color: Colors.white38, fontStyle: FontStyle.italic),
+                        ),
+                      )
+                    else
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 18),
+                        height: 76,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: providerEquipment.length,
+                          itemBuilder: (context, index) {
+                            final eq = providerEquipment[index];
+                            final eqName = eq['name'] ?? '';
+                            final eqPrice = eq['price_per_hour'] != null
+                                ? double.tryParse(eq['price_per_hour'].toString()) ?? 0.0
+                                : 0.0;
+                            final catName = eq['category_name'] ?? '';
+                            final isSelected = selectedEquipmentNames.contains(eqName);
+
+                            return GestureDetector(
+                              onTap: () {
+                                setModalState(() {
+                                  final term = trWithArgs('want_to_rent', [eqName, eqPrice.toStringAsFixed(0)]) + '\n';
+                                  if (isSelected) {
+                                    selectedEquipmentNames.remove(eqName);
+                                    messageController.text = messageController.text.replaceAll(term, '').trim();
+                                  } else {
+                                    selectedEquipmentNames.add(eqName);
+                                    messageController.text = (messageController.text.trim() + '\n' + term).trim();
+                                  }
+                                });
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.only(right: 12),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                width: 160,
+                                decoration: BoxDecoration(
+                                  color: isSelected ? const Color(0xFF1B3B1B) : const Color(0xFF1E1E1E),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: isSelected ? const Color(0xFF4AE54A) : Colors.white.withOpacity(0.05),
+                                    width: isSelected ? 1.5 : 1.0,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      eqName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                                    ),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          catName,
+                                          style: GoogleFonts.inter(fontSize: 10, color: Colors.white38),
+                                        ),
+                                        Text(
+                                          '₹${eqPrice.toStringAsFixed(0)}/hr',
+                                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF4AE54A)),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    const SizedBox(height: 10),
 
                     // Message field
                     Text(
@@ -759,6 +885,704 @@ class _FarmerHomePageState extends State<FarmerHomePage>
     );
   }
 
+  void _showChatBottomSheet(String requestId, String recipientName, String senderId) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final textController = TextEditingController();
+        List<Map<String, dynamic>> messages = [];
+        bool isLoadingChat = true;
+        Timer? pollTimer;
+
+        return StatefulBuilder(
+          builder: (context, setChatState) {
+            Future<void> fetchMessages() async {
+              try {
+                final list = await _apiService.getChatMessages(requestId);
+                if (context.mounted) {
+                  setChatState(() {
+                    messages = list;
+                    isLoadingChat = false;
+                  });
+                }
+              } catch (e) {
+                debugPrint('Error fetching chat messages: $e');
+                if (context.mounted) {
+                  setChatState(() => isLoadingChat = false);
+                }
+              }
+            }
+
+            // Setup polling every 3 seconds
+            if (isLoadingChat) {
+              fetchMessages();
+              pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+                fetchMessages();
+              });
+            }
+
+            return WillPopScope(
+              onWillPop: () async {
+                pollTimer?.cancel();
+                return true;
+              },
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: Container(
+                  height: MediaQuery.of(context).size.height * 0.65,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF141414),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(24),
+                      topRight: Radius.circular(24),
+                    ),
+                  ),
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      // Pull indicator & Header
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.white24,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Chat with $recipientName',
+                            style: GoogleFonts.inter(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white54),
+                            onPressed: () {
+                              pollTimer?.cancel();
+                              Navigator.pop(context);
+                            },
+                          ),
+                        ],
+                      ),
+                      const Divider(color: Colors.white10),
+
+                      // Messages List
+                      Expanded(
+                        child: isLoadingChat
+                            ? const Center(
+                                child: CircularProgressIndicator(
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white38),
+                                ),
+                              )
+                            : messages.isEmpty
+                                ? Center(
+                                    child: Text(
+                                      'No messages yet. Send a message to start.',
+                                      style: GoogleFonts.inter(color: Colors.white24, fontSize: 13),
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    reverse: false,
+                                    physics: const BouncingScrollPhysics(),
+                                    itemCount: messages.length,
+                                    itemBuilder: (context, index) {
+                                      final msg = messages[index];
+                                      final isMe = msg['sender_id'] == senderId;
+                                      final text = msg['message_text'] ?? '';
+                                      final senderName = msg['sender_name'] ?? '';
+
+                                      return Align(
+                                        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                                        child: Container(
+                                          margin: const EdgeInsets.only(bottom: 12),
+                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                          decoration: BoxDecoration(
+                                            color: isMe ? const Color(0xFF4AE54A).withOpacity(0.12) : const Color(0xFF1E1E1E),
+                                            borderRadius: BorderRadius.circular(16).copyWith(
+                                              bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(16),
+                                              bottomLeft: isMe ? const Radius.circular(16) : const Radius.circular(0),
+                                            ),
+                                            border: Border.all(
+                                              color: isMe ? const Color(0xFF4AE54A).withOpacity(0.3) : Colors.white.withOpacity(0.04),
+                                              width: 1,
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              if (!isMe)
+                                                Text(
+                                                  senderName,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: const Color(0xFF4AE54A),
+                                                  ),
+                                                ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                text,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 14,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                      ),
+
+                      // Input Bar
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E1E1E),
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(color: Colors.white.withOpacity(0.08)),
+                              ),
+                              child: TextField(
+                                controller: textController,
+                                style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                                decoration: const InputDecoration(
+                                  hintText: 'Type a message...',
+                                  hintStyle: TextStyle(color: Colors.white24),
+                                  border: InputBorder.none,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () async {
+                              final text = textController.text.trim();
+                              if (text.isEmpty) return;
+                              textController.clear();
+                              try {
+                                await _apiService.sendChatMessage(
+                                  requestId: requestId,
+                                  senderId: senderId,
+                                  messageText: text,
+                                );
+                                fetchMessages();
+                              } catch (e) {
+                                debugPrint('Error sending message: $e');
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.send_rounded, color: Colors.black, size: 20),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showCallSimulationDialog(String providerName, String phoneNumber) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF141414),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: Colors.white.withOpacity(0.08)),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.call, color: Color(0xFF4AE54A)),
+              const SizedBox(width: 8),
+              Text(
+                'IVR calling...',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: Colors.white),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.04),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.person, size: 60, color: Colors.white54),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                providerName,
+                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '+$phoneNumber',
+                style: GoogleFonts.inter(fontSize: 14, color: Colors.white38),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Connecting your call securely via agricultural voice gateway...',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(fontSize: 12, color: Colors.white24, fontStyle: FontStyle.italic),
+              ),
+            ],
+          ),
+          actions: [
+            Center(
+              child: SizedBox(
+                width: 140,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF4444),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.call_end),
+                      const SizedBox(width: 8),
+                      Text('Hang Up', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showPaymentCheckoutDialog(Map<String, dynamic> request, double amount, VoidCallback onCompleted) {
+    bool isPaying = false;
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF141414),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: Colors.white.withOpacity(0.08)),
+              ),
+              title: Text(
+                'Transparent Payment Quote',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: Colors.white),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Service Request Summary:',
+                    style: GoogleFonts.inter(fontSize: 12, color: Colors.white38, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Provider: ${request['provider_name'] ?? 'Provider'}',
+                    style: GoogleFonts.inter(fontSize: 14, color: Colors.white70),
+                  ),
+                  Text(
+                    'Service: ${request['service_name'] ?? 'Agricultural Service'}',
+                    style: GoogleFonts.inter(fontSize: 14, color: Colors.white70),
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(color: Colors.white10),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Total Price Quote:',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white70),
+                      ),
+                      Text(
+                        '₹${amount.toStringAsFixed(0)}',
+                        style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFF4AE54A)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Calculated based on equipment hourly rates.',
+                    style: GoogleFonts.inter(fontSize: 11, color: Colors.white24),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Cancel', style: GoogleFonts.inter(color: Colors.white54)),
+                ),
+                ElevatedButton(
+                  onPressed: isPaying
+                      ? null
+                      : () async {
+                          setDialogState(() => isPaying = true);
+                          try {
+                            final res = await _apiService.processPayment(
+                              requestId: request['id'],
+                              amount: amount,
+                            );
+                            if (res != null && context.mounted) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Payment successful! Reference: ${res['payment']?['transaction_id'] ?? ''}',
+                                    style: GoogleFonts.inter(color: Colors.black, fontWeight: FontWeight.w500),
+                                  ),
+                                  backgroundColor: Colors.white,
+                                  behavior: SnackBarBehavior.floating,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                              );
+                              onCompleted();
+                            }
+                          } catch (e) {
+                            debugPrint('Payment error: $e');
+                            setDialogState(() => isPaying = false);
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4AE54A),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: isPaying
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.black)))
+                      : Text('Pay Now', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showNotificationsSheet(String userId) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        List<Map<String, dynamic>> notifications = [];
+        bool isLoadingNotif = true;
+
+        return StatefulBuilder(
+          builder: (context, setNotifState) {
+            Future<void> fetchNotifs() async {
+              try {
+                final list = await _apiService.getUserNotifications(userId);
+                if (context.mounted) {
+                  setNotifState(() {
+                    notifications = list;
+                    isLoadingNotif = false;
+                  });
+                }
+              } catch (e) {
+                debugPrint('Error fetching notifications: $e');
+                if (context.mounted) {
+                  setNotifState(() => isLoadingNotif = false);
+                }
+              }
+            }
+
+            if (isLoadingNotif) {
+              fetchNotifs();
+              _apiService.markNotificationsAsRead(userId);
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.7,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF141414),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Notifications Center',
+                      style: GoogleFonts.inter(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: isLoadingNotif
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white38),
+                              ),
+                            )
+                          : notifications.isEmpty
+                              ? Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.notifications_none_rounded, color: Colors.white24, size: 48),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        'No notifications yet.',
+                                        style: GoogleFonts.inter(color: Colors.white38, fontSize: 14),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : ListView.builder(
+                                  physics: const BouncingScrollPhysics(),
+                                  itemCount: notifications.length,
+                                  itemBuilder: (context, index) {
+                                    final n = notifications[index];
+                                    final title = n['title'] ?? 'Notification';
+                                    final msg = n['message'] ?? '';
+                                    final isRead = n['is_read'] == true;
+
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 12),
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF1E1E1E),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: Colors.white.withOpacity(0.04)),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            margin: const EdgeInsets.only(top: 3),
+                                            width: 8,
+                                            height: 8,
+                                            decoration: BoxDecoration(
+                                              color: isRead ? Colors.transparent : const Color(0xFF4AE54A),
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  title,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  msg,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 13,
+                                                    color: Colors.white54,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showOfflineChannelsOverlay() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF141414),
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
+            ),
+          ),
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  const Icon(Icons.cell_tower_rounded, color: Color(0xFF4AE54A), size: 28),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Offline Access Channels',
+                    style: GoogleFonts.inter(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Farmers without active internet can request, check, or list agricultural services using these offline templates:',
+                style: GoogleFonts.inter(fontSize: 13, color: Colors.white54, height: 1.4),
+              ),
+              const SizedBox(height: 20),
+              
+              _buildChannelGuide(
+                title: 'IVR Voice Portal (Toll-Free)',
+                details: 'Call 1800-3000-NEON (1800-3000-6366)\nFollow voice instructions to select equipment and book automatically in local languages.',
+                icon: Icons.settings_phone_rounded,
+              ),
+              const SizedBox(height: 16),
+              
+              _buildChannelGuide(
+                title: 'WhatsApp Automated Bot',
+                details: 'Send "BOOK" to +91 90001 90002.\nOur automated assistant will guide you step-by-step through agricultural service booking.',
+                icon: Icons.chat_rounded,
+              ),
+              const SizedBox(height: 16),
+              
+              _buildChannelGuide(
+                title: 'SMS Booking Templates',
+                details: 'SMS "BOOK <Category_ID> <Village_Name>" to 56767.\nExample: BOOK 1 Vasantpur\nCategory IDs: 1-Tractor, 2-Fertilizer, 4-Machinery Rental.',
+                icon: Icons.sms_rounded,
+              ),
+              const SizedBox(height: 24),
+              
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: Text('Close', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildChannelGuide({required String title, required String details, required IconData icon}) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: const Color(0xFF4AE54A), size: 24),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  details,
+                  style: GoogleFonts.inter(fontSize: 12, color: Colors.white54, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showMyRequestsBottomSheet() async {
     List<Map<String, dynamic>> requestsList = [];
     bool isLoading = true;
@@ -1016,6 +1840,148 @@ class _FarmerHomePageState extends State<FarmerHomePage>
                                               ),
                                             ),
                                           ],
+                                          // Chat, Call & Payments for Accepted/Completed Requests
+                                          if (status.toLowerCase() == 'accepted' || status.toLowerCase() == 'completed') ...[
+                                            const SizedBox(height: 14),
+                                            const Divider(color: Colors.white10),
+                                            const SizedBox(height: 8),
+                                            
+                                            // Communication Buttons
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: OutlinedButton.icon(
+                                                    onPressed: () => _showCallSimulationDialog(
+                                                      providerName,
+                                                      request['provider_phone'] ?? '919000000000',
+                                                    ),
+                                                    icon: const Icon(Icons.phone_rounded, size: 16),
+                                                    label: Text(
+                                                      'Call Provider',
+                                                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+                                                    ),
+                                                    style: OutlinedButton.styleFrom(
+                                                      foregroundColor: Colors.white,
+                                                      side: BorderSide(color: Colors.white.withOpacity(0.12)),
+                                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: OutlinedButton.icon(
+                                                    onPressed: () async {
+                                                      final myId = await _authService.getUserId();
+                                                      if (myId != null) {
+                                                        _showChatBottomSheet(
+                                                          request['id'],
+                                                          providerName,
+                                                          myId,
+                                                        );
+                                                      }
+                                                    },
+                                                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                                                    label: Text(
+                                                      'Chat',
+                                                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+                                                    ),
+                                                    style: OutlinedButton.styleFrom(
+                                                      foregroundColor: Colors.white,
+                                                      side: BorderSide(color: Colors.white.withOpacity(0.12)),
+                                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 12),
+
+                                            // Pricing Quote & Payment Details
+                                            Container(
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white.withOpacity(0.02),
+                                                borderRadius: BorderRadius.circular(12),
+                                                border: Border.all(color: Colors.white.withOpacity(0.04)),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      Text(
+                                                        'Transparent Pricing Quote',
+                                                        style: GoogleFonts.inter(fontSize: 11, color: Colors.white38, fontWeight: FontWeight.w600),
+                                                      ),
+                                                      Text(
+                                                        '₹370/hr x 4 hrs',
+                                                        style: GoogleFonts.inter(fontSize: 11, color: Colors.white38),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      Text(
+                                                        'Amount due:',
+                                                        style: GoogleFonts.inter(fontSize: 13, color: Colors.white70),
+                                                      ),
+                                                      Text(
+                                                        '₹${(request['payment_amount'] != null ? double.tryParse(request['payment_amount'].toString()) ?? 1480.0 : 1480.0).toStringAsFixed(0)}',
+                                                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF4AE54A)),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  if (request['payment_status'] == 'paid') ...[
+                                                    const SizedBox(height: 10),
+                                                    Row(
+                                                      children: [
+                                                        const Icon(Icons.check_circle_rounded, color: Color(0xFF4AE54A), size: 16),
+                                                        const SizedBox(width: 6),
+                                                        Text(
+                                                          'PAID (Txn: ${request['transaction_id'] ?? ''})',
+                                                          style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF4AE54A), fontWeight: FontWeight.w700),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ] else ...[
+                                                    const SizedBox(height: 10),
+                                                    SizedBox(
+                                                      width: double.infinity,
+                                                      child: ElevatedButton(
+                                                        onPressed: () {
+                                                          _showPaymentCheckoutDialog(
+                                                            request,
+                                                            request['payment_amount'] != null ? double.tryParse(request['payment_amount'].toString()) ?? 1480.0 : 1480.0,
+                                                            () {
+                                                              setModalState(() {
+                                                                isLoading = true;
+                                                              });
+                                                            },
+                                                          );
+                                                        },
+                                                        style: ElevatedButton.styleFrom(
+                                                          backgroundColor: const Color(0xFF4AE54A),
+                                                          foregroundColor: Colors.black,
+                                                          elevation: 0,
+                                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                          padding: const EdgeInsets.symmetric(vertical: 10),
+                                                        ),
+                                                        child: Text(
+                                                          'Proceed to Payment Checkout',
+                                                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ),
+                                          ],
                                           if (status.toLowerCase() == 'completed' && reviewRating == null) ...[
                                             const SizedBox(height: 12),
                                             SizedBox(
@@ -1133,6 +2099,26 @@ class _FarmerHomePageState extends State<FarmerHomePage>
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.cell_tower_rounded, color: Colors.white70),
+                      onPressed: _showOfflineChannelsOverlay,
+                      tooltip: 'Offline channels info',
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
+                    ),
+                    const SizedBox(width: 12),
+                    IconButton(
+                      icon: const Icon(Icons.notifications_none_rounded, color: Colors.white70),
+                      onPressed: () async {
+                        final userId = await _authService.getUserId();
+                        if (userId != null) {
+                          _showNotificationsSheet(userId);
+                        }
+                      },
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
                     ),
                     const SizedBox(width: 12),
                     const LanguageSelector(),

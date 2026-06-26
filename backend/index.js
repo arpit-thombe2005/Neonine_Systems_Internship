@@ -63,7 +63,7 @@ app.get('/api/users/phone/:phone', async (req, res) => {
     const result = await db.query(`
       SELECT 
         u.id, u.full_name, u.phone_number, u.user_type, u.village_area, 
-        u.address, u.latitude, u.longitude, u.location_updated_at,
+        u.address, u.latitude, u.longitude, u.location_updated_at, u.aadhaar_hash,
         sp.id AS provider_id, sp.service_name, sp.is_online,
         (SELECT STUFF((
            SELECT ',' + CAST(pc.category_id AS VARCHAR)
@@ -182,7 +182,7 @@ app.post('/api/users/register', async (req, res) => {
     const fetchResult = await db.query(`
       SELECT 
         u.id, u.full_name, u.phone_number, u.user_type, u.village_area, 
-        u.address, u.latitude, u.longitude, u.location_updated_at,
+        u.address, u.latitude, u.longitude, u.location_updated_at, u.aadhaar_hash,
         sp.id AS provider_id, sp.service_name, sp.is_online,
         (SELECT STUFF((
            SELECT ',' + CAST(pc.category_id AS VARCHAR)
@@ -343,9 +343,11 @@ app.get('/api/providers/:providerId/requests/today/list', async (req, res) => {
     const result = await db.query(`
       SELECT sr.id, sr.farmer_id, sr.category_id, sr.status, sr.message, 
         sr.farmer_latitude, sr.farmer_longitude, sr.created_at,
-        u.full_name AS farmer_name, u.phone_number AS farmer_phone
+        u.full_name AS farmer_name, u.phone_number AS farmer_phone,
+        p.payment_status, p.amount AS payment_amount, p.transaction_id
       FROM service_requests sr
       JOIN users u ON sr.farmer_id = u.id
+      LEFT JOIN payments p ON p.request_id = sr.id
       WHERE sr.provider_id = @providerId AND CAST(sr.created_at AS DATE) = CAST(GETUTCDATE() AS DATE)
       ORDER BY sr.created_at DESC;
     `, { providerId });
@@ -361,6 +363,9 @@ app.post('/api/requests', async (req, res) => {
     return sendError(res, 400, 'Missing required fields: farmer_id and provider_id are mandatory.');
   }
   try {
+    const farmerRes = await db.query('SELECT full_name FROM users WHERE id = @farmer_id;', { farmer_id });
+    const farmerName = farmerRes.recordset.length > 0 ? farmerRes.recordset[0].full_name : 'A Farmer';
+
     const result = await db.query(`
       INSERT INTO service_requests (farmer_id, provider_id, category_id, message, farmer_latitude, farmer_longitude, status)
       OUTPUT INSERTED.*
@@ -370,7 +375,20 @@ app.post('/api/requests', async (req, res) => {
       category_id: category_id || null, message: message || null,
       farmer_latitude: farmer_latitude || null, farmer_longitude: farmer_longitude || null,
     });
-    return res.status(201).json(result.recordset[0]);
+
+    const createdRequest = result.recordset[0];
+
+    // Trigger Notification for Provider
+    await db.query(`
+      INSERT INTO notifications (user_id, title, message)
+      VALUES (@provider_id, @notifTitle, @notifMessage);
+    `, {
+      provider_id,
+      notifTitle: 'New Service Request',
+      notifMessage: `${farmerName} has sent you a new service request.`
+    });
+
+    return res.status(201).json(createdRequest);
   } catch (err) {
     return sendError(res, 500, 'Failed to create service request', err);
   }
@@ -396,7 +414,33 @@ app.put('/api/requests/:id/status', async (req, res) => {
     if (result.rowsAffected[0] === 0) {
       return sendError(res, 404, 'Service request not found.');
     }
-    return res.status(200).json({ success: true, request: result.recordset[0] });
+    const updatedRequest = result.recordset[0];
+    const farmerId = updatedRequest.farmer_id;
+    const providerId = updatedRequest.provider_id;
+
+    const providerRes = await db.query('SELECT full_name FROM users WHERE id = @providerId;', { providerId });
+    const providerName = providerRes.recordset.length > 0 ? providerRes.recordset[0].full_name : 'Provider';
+
+    let notifTitle = 'Request Update';
+    let notifMessage = `Your request status was updated to ${status}.`;
+    if (status === 'accepted') {
+      notifTitle = 'Request Accepted';
+      notifMessage = `${providerName} has accepted your service request.`;
+    } else if (status === 'rejected') {
+      notifTitle = 'Request Rejected';
+      notifMessage = `${providerName} has rejected your service request.`;
+    } else if (status === 'completed') {
+      notifTitle = 'Service Completed';
+      notifMessage = `${providerName} has completed your service request.`;
+    }
+
+    // Trigger Notification for Farmer
+    await db.query(`
+      INSERT INTO notifications (user_id, title, message)
+      VALUES (@farmerId, @notifTitle, @notifMessage);
+    `, { farmerId, notifTitle, notifMessage });
+
+    return res.status(200).json({ success: true, request: updatedRequest });
   } catch (err) {
     return sendError(res, 500, 'Failed to update service request status', err);
   }
@@ -410,11 +454,13 @@ app.get('/api/farmers/:farmerId/requests', async (req, res) => {
         sr.farmer_latitude, sr.farmer_longitude, sr.created_at,
         u.full_name AS provider_name, u.phone_number AS provider_phone,
         sp.service_name,
-        rev.rating AS review_rating, rev.review_text AS review_text
+        rev.rating AS review_rating, rev.review_text AS review_text,
+        p.payment_status, p.amount AS payment_amount, p.transaction_id
       FROM service_requests sr
       JOIN users u ON sr.provider_id = u.id
       JOIN service_providers sp ON sp.user_id = u.id
       LEFT JOIN reviews rev ON rev.request_id = sr.id
+      LEFT JOIN payments p ON p.request_id = sr.id
       WHERE sr.farmer_id = @farmerId
       ORDER BY sr.created_at DESC;
     `, { farmerId });
@@ -467,6 +513,216 @@ app.get('/api/categories', async (req, res) => {
     return res.status(200).json({ success: true, categories: result.recordset });
   } catch (err) {
     return sendError(res, 500, 'Failed to fetch service categories', err);
+  }
+});
+
+// ─── Chat Messages Endpoints ──────────────────────────────────────────────────
+
+app.get('/api/requests/:requestId/messages', async (req, res) => {
+  const { requestId } = req.params;
+  try {
+    const result = await db.query(`
+      SELECT cm.id, cm.request_id, cm.sender_id, cm.message_text, cm.created_at,
+        u.full_name AS sender_name
+      FROM chat_messages cm
+      JOIN users u ON cm.sender_id = u.id
+      WHERE cm.request_id = @requestId
+      ORDER BY cm.created_at ASC;
+    `, { requestId });
+    return res.status(200).json({ success: true, messages: result.recordset });
+  } catch (err) {
+    return sendError(res, 500, 'Failed to fetch chat messages', err);
+  }
+});
+
+app.post('/api/requests/:requestId/messages', async (req, res) => {
+  const { requestId } = req.params;
+  const { sender_id, message_text } = req.body;
+  if (!sender_id || !message_text) {
+    return sendError(res, 400, 'Missing required fields: sender_id and message_text are mandatory.');
+  }
+  try {
+    // Insert chat message
+    const result = await db.query(`
+      INSERT INTO chat_messages (request_id, sender_id, message_text)
+      OUTPUT INSERTED.*
+      VALUES (@requestId, @sender_id, @message_text);
+    `, { requestId, sender_id, message_text });
+
+    const message = result.recordset[0];
+
+    // Find recipient and sender info
+    const reqInfo = await db.query('SELECT farmer_id, provider_id FROM service_requests WHERE id = @requestId;', { requestId });
+    if (reqInfo.recordset.length > 0) {
+      const { farmer_id, provider_id } = reqInfo.recordset[0];
+      const recipientId = sender_id === farmer_id ? provider_id : farmer_id;
+
+      const senderRes = await db.query('SELECT full_name FROM users WHERE id = @sender_id;', { sender_id });
+      const senderName = senderRes.recordset.length > 0 ? senderRes.recordset[0].full_name : 'Someone';
+
+      // Insert notification
+      await db.query(`
+        INSERT INTO notifications (user_id, title, message)
+        VALUES (@recipientId, @notifTitle, @notifMessage);
+      `, {
+        recipientId,
+        notifTitle: 'New Chat Message',
+        notifMessage: `${senderName}: ${message_text.length > 50 ? message_text.substring(0, 50) + '...' : message_text}`
+      });
+    }
+
+    return res.status(201).json({ success: true, message });
+  } catch (err) {
+    return sendError(res, 500, 'Failed to send message', err);
+  }
+});
+
+// ─── Payment Endpoints ────────────────────────────────────────────────────────
+
+app.post('/api/requests/:requestId/pay', async (req, res) => {
+  const { requestId } = req.params;
+  const { amount } = req.body;
+  if (amount === undefined) {
+    return sendError(res, 400, 'Missing required fields: amount is mandatory.');
+  }
+  try {
+    const txnId = 'TXN-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+
+    // Check if payment already exists
+    const checkPayment = await db.query('SELECT id FROM payments WHERE request_id = @requestId;', { requestId });
+    if (checkPayment.recordset.length > 0) {
+      return sendError(res, 400, 'This request has already been paid.');
+    }
+
+    // Insert payment
+    const paymentResult = await db.query(`
+      INSERT INTO payments (request_id, amount, payment_status, transaction_id)
+      OUTPUT INSERTED.*
+      VALUES (@requestId, @amount, 'paid', @txnId);
+    `, { requestId, amount, txnId });
+
+    // Also transition status to completed automatically upon payment
+    await db.query(`
+      UPDATE service_requests SET status = 'completed', updated_at = SYSDATETIMEOFFSET() WHERE id = @requestId;
+    `, { requestId });
+
+    // Notify provider
+    const reqInfo = await db.query('SELECT farmer_id, provider_id FROM service_requests WHERE id = @requestId;', { requestId });
+    if (reqInfo.recordset.length > 0) {
+      const { provider_id } = reqInfo.recordset[0];
+      await db.query(`
+        INSERT INTO notifications (user_id, title, message)
+        VALUES (@provider_id, 'Payment Received', @notifMessage);
+      `, {
+        provider_id,
+        notifMessage: `Farmer paid ₹${amount} for service request. Transaction: ${txnId}`
+      });
+    }
+
+    return res.status(201).json({ success: true, payment: paymentResult.recordset[0] });
+  } catch (err) {
+    return sendError(res, 500, 'Failed to process payment checkout', err);
+  }
+});
+
+// ─── Notifications Endpoints ──────────────────────────────────────────────────
+
+app.get('/api/notifications/:userId', async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const result = await db.query(`
+      SELECT id, user_id, title, message, is_read, created_at
+      FROM notifications
+      WHERE user_id = @userId
+      ORDER BY created_at DESC;
+    `, { userId });
+    return res.status(200).json({ success: true, notifications: result.recordset });
+  } catch (err) {
+    return sendError(res, 500, 'Failed to fetch notifications', err);
+  }
+});
+
+app.put('/api/notifications/:userId/read', async (req, res) => {
+  const { userId } = req.params;
+  try {
+    await db.query(`
+      UPDATE notifications SET is_read = 1 WHERE user_id = @userId;
+    `, { userId });
+    return res.status(200).json({ success: true, message: 'All notifications marked as read' });
+  } catch (err) {
+    return sendError(res, 500, 'Failed to mark notifications as read', err);
+  }
+});
+
+// ─── Equipment Listing Endpoints ──────────────────────────────────────────────
+
+app.get('/api/equipment', async (req, res) => {
+  const { provider_id } = req.query;
+  try {
+    let queryStr = `
+      SELECT eq.*, sp.user_id, sc.name AS category_name
+      FROM equipment eq
+      JOIN service_providers sp ON eq.provider_id = sp.id
+      JOIN service_categories sc ON eq.category_id = sc.id
+    `;
+    const params = {};
+    if (provider_id) {
+      queryStr += ` WHERE sp.id = @provider_id OR sp.user_id = @provider_id`;
+      params.provider_id = provider_id;
+    }
+    queryStr += ` ORDER BY eq.created_at DESC;`;
+
+    const result = await db.query(queryStr, params);
+    return res.status(200).json({ success: true, equipment: result.recordset });
+  } catch (err) {
+    return sendError(res, 500, 'Failed to fetch equipment listings', err);
+  }
+});
+
+app.post('/api/equipment', async (req, res) => {
+  const { provider_id, name, category_id, price_per_hour } = req.body;
+  if (!provider_id || !name || !category_id || price_per_hour === undefined) {
+    return sendError(res, 400, 'Missing required fields: provider_id, name, category_id, price_per_hour are mandatory.');
+  }
+  try {
+    // Resolve service_providers.id from provider_id (which could be a user ID or service_provider.id)
+    const spCheck = await db.query('SELECT id FROM service_providers WHERE id = @provider_id OR user_id = @provider_id;', { provider_id });
+    if (spCheck.recordset.length === 0) {
+      return sendError(res, 404, 'Service provider profile not found.');
+    }
+    const actualSpId = spCheck.recordset[0].id;
+
+    const result = await db.query(`
+      INSERT INTO equipment (provider_id, name, category_id, price_per_hour, availability_status)
+      OUTPUT INSERTED.*
+      VALUES (@actualSpId, @name, @category_id, @price_per_hour, 'available');
+    `, {
+      actualSpId,
+      name,
+      category_id: parseInt(category_id, 10),
+      price_per_hour: parseFloat(price_per_hour)
+    });
+
+    return res.status(201).json({ success: true, equipment: result.recordset[0] });
+  } catch (err) {
+    return sendError(res, 500, 'Failed to add equipment listing', err);
+  }
+});
+
+app.delete('/api/equipment/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query(`
+      DELETE FROM equipment
+      OUTPUT DELETED.*
+      WHERE id = @id;
+    `, { id });
+    if (result.rowsAffected[0] === 0) {
+      return sendError(res, 404, 'Equipment listing not found.');
+    }
+    return res.status(200).json({ success: true, message: 'Equipment listing removed successfully.', equipment: result.recordset[0] });
+  } catch (err) {
+    return sendError(res, 500, 'Failed to delete equipment listing', err);
   }
 });
 

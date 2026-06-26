@@ -95,6 +95,30 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>?> _delete(String endpoint) async {
+    try {
+      final uri = Uri.parse('$_baseUrl$endpoint');
+      debugPrint('API DELETE: $uri');
+
+      final response = await http.delete(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(_timeout);
+
+      debugPrint('API response (${response.statusCode}): ${response.body}');
+
+      if (response.statusCode == 200) {
+        if (response.body.isEmpty) return {};
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } else {
+        throw Exception('API error: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('API DELETE error: $e');
+      rethrow;
+    }
+  }
+
   // ─── User endpoints ──────────────────────────────────────────────────────
 
   /// Check if a user exists by phone number.
@@ -268,5 +292,91 @@ class ApiService {
       return List<Map<String, dynamic>>.from(response['categories']);
     }
     return [];
+  }
+
+  // ─── Chat Message endpoints ────────────────────────────────────────────────
+
+  /// Get chat messages for a specific service request.
+  Future<List<Map<String, dynamic>>> getChatMessages(String requestId) async {
+    final response = await _get('/requests/$requestId/messages');
+    if (response != null && response['messages'] != null) {
+      return List<Map<String, dynamic>>.from(response['messages']);
+    }
+    return [];
+  }
+
+  /// Send a chat message for a service request.
+  Future<Map<String, dynamic>?> sendChatMessage({
+    required String requestId,
+    required String senderId,
+    required String messageText,
+  }) async {
+    return await _post('/requests/$requestId/messages', {
+      'sender_id': senderId,
+      'message_text': messageText,
+    });
+  }
+
+  // ─── Payment endpoints ──────────────────────────────────────────────────────
+
+  /// Process simulated payment checkout for a service request.
+  Future<Map<String, dynamic>?> processPayment({
+    required String requestId,
+    required double amount,
+  }) async {
+    return await _post('/requests/$requestId/pay', {
+      'amount': amount,
+    });
+  }
+
+  // ─── Notifications endpoints ────────────────────────────────────────────────
+
+  /// Get notifications feed for a user.
+  Future<List<Map<String, dynamic>>> getUserNotifications(String userId) async {
+    final response = await _get('/notifications/$userId');
+    if (response != null && response['notifications'] != null) {
+      return List<Map<String, dynamic>>.from(response['notifications']);
+    }
+    return [];
+  }
+
+  /// Mark all user notifications as read.
+  Future<Map<String, dynamic>?> markNotificationsAsRead(String userId) async {
+    return await _put('/notifications/$userId/read', {});
+  }
+
+  // ─── Equipment endpoints ────────────────────────────────────────────────────
+
+  /// Get equipment list (optionally filtered by provider).
+  Future<List<Map<String, dynamic>>> getEquipmentList({String? providerId}) async {
+    final params = <String, String>{};
+    if (providerId != null) {
+      params['provider_id'] = providerId;
+    }
+    final response = await _get('/equipment', queryParams: params.isEmpty ? null : params);
+    if (response != null && response['equipment'] != null) {
+      return List<Map<String, dynamic>>.from(response['equipment']);
+    }
+    return [];
+  }
+
+  /// Add a new equipment listing.
+  Future<Map<String, dynamic>?> addEquipment({
+    required String providerId,
+    required String name,
+    required int categoryId,
+    required double pricePerHour,
+  }) async {
+    return await _post('/equipment', {
+      'provider_id': providerId,
+      'name': name,
+      'category_id': categoryId,
+      'price_per_hour': pricePerHour,
+    });
+  }
+
+  /// Delete an equipment listing.
+  Future<Map<String, dynamic>?> deleteEquipment(String id) async {
+    return await _delete('/equipment/$id');
   }
 }

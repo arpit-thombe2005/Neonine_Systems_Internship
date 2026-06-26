@@ -31,11 +31,11 @@ CREATE TABLE service_categories (
 SET IDENTITY_INSERT service_categories ON;
 INSERT INTO service_categories (id, name) VALUES
     (1, 'Tractor'),
-    (2, 'Fertilizer'),
-    (3, 'Feed Supplier'),
-    (4, 'Machinery Rental'),
-    (5, 'Transport'),
-    (6, 'Other');
+    (2, 'Harvester'),
+    (3, 'Rotavator'),
+    (4, 'Seed Drill'),
+    (5, 'Power Sprayer'),
+    (6, 'Thresher');
 SET IDENTITY_INSERT service_categories OFF;
 
 -- 3. SERVICE PROVIDERS TABLE

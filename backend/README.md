@@ -1,14 +1,14 @@
 # Neonine Backend — Node.js & Express API Server
 
-This is the central backend API server for the Neonine Flutter mobile application. It connects directly to your **Neon Serverless PostgreSQL Database** and provides robust endpoints for user profiles, real-time GPS tracking, nearby provider lookup, and service request counts.
+This is the central backend API server for the Neonine Flutter mobile application. It connects directly to your **Microsoft SQL Server (MSSQL) Database** and provides robust endpoints for user profiles, real-time GPS tracking, nearby provider lookup, and service request counts.
 
 ---
 
 ## 🚀 Key Features
 
-1. **Automatic Schema Migrations**: No need to run SQL files manually! The server automatically detects if the public tables exist. If not, it executes `neon_schema.sql` on startup to initialize your database instantly.
+1. **Automatic Schema Migrations**: No need to run SQL files manually! The server automatically detects if the public tables exist. If not, it executes `mssql_schema.sql` on startup to initialize your database instantly.
 2. **Nearby Search (Haversine Formula)**: Searches for nearby online service providers using the Haversine formula computed directly inside SQL. This provides high-performance, real-time spatial calculations and distance sorting.
-3. **Safe PostgreSQL Transactions**: User registrations are performed inside an ACID-compliant PostgreSQL transaction. This guarantees that service provider mappings and service categories are saved completely or not at all.
+3. **Safe Transactions**: User registrations are performed inside an ACID-compliant database transaction. This guarantees that service provider mappings and service categories are saved completely or not at all.
 4. **Professional Morgan Logging**: Real-time HTTP request logging directly in your terminal console.
 
 ---
@@ -17,7 +17,7 @@ This is the central backend API server for the Neonine Flutter mobile applicatio
 
 ### 1. Prerequisites
 - **Node.js** (v18 or higher recommended)
-- A **Neon PostgreSQL database** project (create one for free at [neon.tech](https://neon.tech))
+- A running **Microsoft SQL Server (MSSQL)** database project.
 
 ### 2. Installation
 Open your terminal inside this `backend` folder and install the required Node.js packages:
@@ -26,12 +26,17 @@ npm install
 ```
 
 ### 3. Database Configuration
-Rename or edit the `.env` file inside this `backend` directory and set your Neon connection string:
+Rename or edit the `.env` file inside this `backend` directory and set your SQL Server connection details:
 ```env
 PORT=3000
-DATABASE_URL="postgresql://<user>:<password>@<host>/<dbname>?sslmode=require"
+MSSQL_SERVER=127.0.0.1
+MSSQL_DATABASE=neonine
+MSSQL_USER=sa
+MSSQL_PASSWORD=YourPassword
+MSSQL_PORT=1433
+MSSQL_ENCRYPT=false
+MSSQL_TRUST_CERT=true
 ```
-*(You can copy this connection string directly from your Neon console dashboard).*
 
 ### 4. Running the Server
 
@@ -46,8 +51,8 @@ DATABASE_URL="postgresql://<user>:<password>@<host>/<dbname>?sslmode=require"
 
 Once started, the database will be automatically checked and initialized! You should see:
 ```text
-Database tables not found. Executing neon_schema.sql automatically...
-Successfully executed neon_schema.sql. Database is fully initialized!
+Database tables not found. Executing mssql_schema.sql automatically...
+Successfully executed mssql_schema.sql. Database is fully initialized!
 ```
 
 ---

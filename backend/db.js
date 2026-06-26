@@ -96,6 +96,85 @@ async function initializeDatabase() {
       console.log('\x1b[32m%s\x1b[0m', 'Database tables are already initialized. Skipping migration.');
     }
 
+    // Programmatically update users.user_type check constraint to exclude 'agent' (keep only 'farmer', 'service_provider')
+    await p.request().query(`
+      -- Clean up any legacy agent users first so the constraint validation succeeds
+      DELETE FROM users WHERE user_type = 'agent';
+
+      DECLARE @ConstraintName NVARCHAR(200)
+      SELECT @ConstraintName = name
+      FROM sys.check_constraints
+      WHERE parent_object_id = OBJECT_ID('users')
+        AND definition LIKE '%user_type%'
+
+      IF @ConstraintName IS NOT NULL
+      BEGIN
+          EXEC('ALTER TABLE users DROP CONSTRAINT ' + @ConstraintName)
+      END
+
+      IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE parent_object_id = OBJECT_ID('users') AND name = 'CK_users_user_type')
+      BEGIN
+          ALTER TABLE users ADD CONSTRAINT CK_users_user_type CHECK (user_type IN ('farmer', 'service_provider'));
+      END
+    `);
+
+    // Programmatically ensure service categories are farming equipment
+    await p.request().query(`
+      IF EXISTS (SELECT * FROM service_categories WHERE id = 1)
+        UPDATE service_categories SET name = 'Tractor' WHERE id = 1;
+      ELSE
+      BEGIN
+        SET IDENTITY_INSERT service_categories ON;
+        INSERT INTO service_categories (id, name) VALUES (1, 'Tractor');
+        SET IDENTITY_INSERT service_categories OFF;
+      END
+      
+      IF EXISTS (SELECT * FROM service_categories WHERE id = 2)
+        UPDATE service_categories SET name = 'Harvester' WHERE id = 2;
+      ELSE
+      BEGIN
+        SET IDENTITY_INSERT service_categories ON;
+        INSERT INTO service_categories (id, name) VALUES (2, 'Harvester');
+        SET IDENTITY_INSERT service_categories OFF;
+      END
+
+      IF EXISTS (SELECT * FROM service_categories WHERE id = 3)
+        UPDATE service_categories SET name = 'Rotavator' WHERE id = 3;
+      ELSE
+      BEGIN
+        SET IDENTITY_INSERT service_categories ON;
+        INSERT INTO service_categories (id, name) VALUES (3, 'Rotavator');
+        SET IDENTITY_INSERT service_categories OFF;
+      END
+
+      IF EXISTS (SELECT * FROM service_categories WHERE id = 4)
+        UPDATE service_categories SET name = 'Seed Drill' WHERE id = 4;
+      ELSE
+      BEGIN
+        SET IDENTITY_INSERT service_categories ON;
+        INSERT INTO service_categories (id, name) VALUES (4, 'Seed Drill');
+        SET IDENTITY_INSERT service_categories OFF;
+      END
+
+      IF EXISTS (SELECT * FROM service_categories WHERE id = 5)
+        UPDATE service_categories SET name = 'Power Sprayer' WHERE id = 5;
+      ELSE
+      BEGIN
+        SET IDENTITY_INSERT service_categories ON;
+        INSERT INTO service_categories (id, name) VALUES (5, 'Power Sprayer');
+        SET IDENTITY_INSERT service_categories OFF;
+      END
+
+      IF EXISTS (SELECT * FROM service_categories WHERE id = 6)
+        UPDATE service_categories SET name = 'Thresher' WHERE id = 6;
+      ELSE
+      BEGIN
+        SET IDENTITY_INSERT service_categories ON;
+        INSERT INTO service_categories (id, name) VALUES (6, 'Thresher');
+        SET IDENTITY_INSERT service_categories OFF;
+      END
+    `);
+
     // Programmatically ensure the reviews table is created if it doesn't exist
     await p.request().query(`
       IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'reviews')
@@ -107,6 +186,68 @@ async function initializeDatabase() {
           provider_id         UNIQUEIDENTIFIER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
           rating              INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
           review_text         NVARCHAR(MAX),
+          created_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+        );
+      END
+    `);
+
+    // Programmatically ensure the equipment table is created if it doesn't exist
+    await p.request().query(`
+      IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'equipment')
+      BEGIN
+        CREATE TABLE equipment (
+          id                  UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+          provider_id         UNIQUEIDENTIFIER NOT NULL REFERENCES service_providers(id) ON DELETE CASCADE,
+          name                NVARCHAR(100) NOT NULL,
+          category_id         INT NOT NULL REFERENCES service_categories(id),
+          price_per_hour      DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+          availability_status VARCHAR(20) NOT NULL DEFAULT 'available'
+                              CHECK (availability_status IN ('available', 'rented', 'maintenance')),
+          created_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+        );
+      END
+    `);
+
+    // Programmatically ensure the payments table is created if it doesn't exist
+    await p.request().query(`
+      IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'payments')
+      BEGIN
+        CREATE TABLE payments (
+          id                  UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+          request_id          UNIQUEIDENTIFIER UNIQUE NOT NULL REFERENCES service_requests(id) ON DELETE CASCADE,
+          amount              DECIMAL(10, 2) NOT NULL,
+          payment_status      VARCHAR(20) NOT NULL DEFAULT 'unpaid'
+                              CHECK (payment_status IN ('unpaid', 'paid', 'refunded')),
+          transaction_id      VARCHAR(100),
+          created_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+        );
+      END
+    `);
+
+    // Programmatically ensure the chat_messages table is created if it doesn't exist
+    await p.request().query(`
+      IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'chat_messages')
+      BEGIN
+        CREATE TABLE chat_messages (
+          id                  UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+          request_id          UNIQUEIDENTIFIER NOT NULL REFERENCES service_requests(id) ON DELETE CASCADE,
+          sender_id           UNIQUEIDENTIFIER NOT NULL REFERENCES users(id),
+          message_text        NVARCHAR(MAX) NOT NULL,
+          created_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+        );
+      END
+    `);
+
+    // Programmatically ensure the notifications table is created if it doesn't exist
+    await p.request().query(`
+      IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'notifications')
+      BEGIN
+        CREATE TABLE notifications (
+          id                  UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+          user_id             UNIQUEIDENTIFIER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title               NVARCHAR(100) NOT NULL,
+          message             NVARCHAR(500) NOT NULL,
+          is_read             BIT NOT NULL DEFAULT 0,
           created_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
         );
       END
