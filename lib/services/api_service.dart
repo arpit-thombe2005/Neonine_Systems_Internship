@@ -7,8 +7,10 @@ import 'package:flutter/foundation.dart';
 class ApiService {
   // ─── Backend URL ──────────────────────────────────────────────────────────
   // For physical Android devices connected via USB, we set up ADB port forwarding: adb reverse tcp:3000 tcp:3000
-  // This allows the app to communicate using 'localhost:3000' directly.
-  static const String _baseUrl = 'https://neonine-systems-internship-backend.onrender.com/api';
+  // Local development URL pointing to your local MS SQL backend
+  static const String _baseUrl = 'http://localhost:3000/api';
+  // Production URL:
+  // static const String _baseUrl = 'https://neonine-systems-internship-backend.onrender.com/api';
 
   // Timeout duration for API calls
   static const Duration _timeout = Duration(seconds: 10);
@@ -107,6 +109,7 @@ class ApiService {
     required String fullName,
     required String phoneNumber,
     required String userType,
+    required String aadhaarNumber,
     String? villageArea,
     String? address,
     double? latitude,
@@ -119,6 +122,7 @@ class ApiService {
       'full_name': fullName,
       'phone_number': phoneNumber,
       'user_type': userType,
+      'aadhaar_number': aadhaarNumber,
       'village_area': villageArea,
       'address': address,
       'latitude': latitude,
@@ -218,6 +222,42 @@ class ApiService {
       'message': message,
       'farmer_latitude': farmerLatitude,
       'farmer_longitude': farmerLongitude,
+    });
+  }
+
+  /// Update the status of a service request.
+  Future<Map<String, dynamic>?> updateServiceRequestStatus({
+    required String requestId,
+    required String status,
+  }) async {
+    return await _put('/requests/$requestId/status', {
+      'status': status,
+    });
+  }
+
+  /// Get all requests sent by a farmer.
+  Future<List<Map<String, dynamic>>> getFarmerRequests(String farmerId) async {
+    final response = await _get('/farmers/$farmerId/requests');
+    if (response != null && response['requests'] != null) {
+      return List<Map<String, dynamic>>.from(response['requests']);
+    }
+    return [];
+  }
+
+  /// Submit a rating and review for a completed service request.
+  Future<Map<String, dynamic>?> submitReview({
+    required String requestId,
+    required String farmerId,
+    required String providerId,
+    required int rating,
+    String? reviewText,
+  }) async {
+    return await _post('/reviews', {
+      'request_id': requestId,
+      'farmer_id': farmerId,
+      'provider_id': providerId,
+      'rating': rating,
+      'review_text': reviewText,
     });
   }
 

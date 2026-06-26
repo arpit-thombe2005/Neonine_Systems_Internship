@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/otp_service.dart';
+import '../services/translation_service.dart';
 import '../widgets/custom_button.dart';
+import '../widgets/language_selector.dart';
 import 'otp_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -160,11 +162,16 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    SizedBox(height: MediaQuery.of(context).size.height * 0.18),
+                    const SizedBox(height: 16),
+                    Align(
+                      alignment: Alignment.topRight,
+                      child: const LanguageSelector(),
+                    ),
+                    SizedBox(height: MediaQuery.of(context).size.height * 0.12),
 
                     // Welcome heading — centered, uppercase, matching Figma
                     Text(
-                      'WELCOME BACK',
+                      tr('welcome_back'),
                       textAlign: TextAlign.center,
                       style: GoogleFonts.inter(
                         fontSize: 32,
@@ -178,7 +185,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                     const SizedBox(height: 14),
 
                     Text(
-                      'SIGN IN WITH YOUR\nREGISTERED PHONE NUMBER',
+                      tr('sign_in_sub'),
                       textAlign: TextAlign.center,
                       style: GoogleFonts.inter(
                         fontSize: 12,
@@ -242,7 +249,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
                     // Send OTP button
                     CustomButton(
-                      label: 'Send OTP',
+                      label: tr('send_otp'),
                       onPressed: _isLoading ? null : _handleSendOtp,
                       isLoading: _isLoading,
                     ),

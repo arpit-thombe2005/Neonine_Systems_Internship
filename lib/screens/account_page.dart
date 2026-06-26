@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
+import '../services/translation_service.dart';
 import '../widgets/custom_button.dart';
+import '../widgets/language_selector.dart';
 import 'login_page.dart';
 
 class AccountPage extends StatefulWidget {
@@ -152,7 +154,7 @@ class _AccountPageState extends State<AccountPage>
           ),
         ),
         title: Text(
-          'Account',
+          tr('account_profile'),
           style: GoogleFonts.inter(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -160,6 +162,12 @@ class _AccountPageState extends State<AccountPage>
           ),
         ),
         centerTitle: true,
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 16),
+            child: LanguageSelector(),
+          ),
+        ],
       ),
       body: SafeArea(
         child: FadeTransition(
@@ -230,7 +238,7 @@ class _AccountPageState extends State<AccountPage>
                             borderRadius: BorderRadius.circular(100),
                           ),
                           child: Text(
-                            isProvider ? 'Service Provider' : 'Farmer',
+                            isProvider ? tr('service_provider') : tr('farmer'),
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               color: isProvider
@@ -257,27 +265,27 @@ class _AccountPageState extends State<AccountPage>
                           child: Column(
                             children: [
                               _buildDetailRow(
-                                'FULL NAME',
+                                tr('full_name').toUpperCase(),
                                 _userData?['full_name'],
                                 Icons.person_outline_rounded,
                               ),
                               _buildDetailRow(
-                                'PHONE NUMBER',
+                                tr('phone_number').toUpperCase(),
                                 _userData?['phone_number'],
                                 Icons.phone_outlined,
                               ),
                               _buildDetailRow(
-                                'USER TYPE',
-                                isProvider ? 'Service Provider' : 'Farmer',
+                                tr('user_type').toUpperCase(),
+                                isProvider ? tr('service_provider') : tr('farmer'),
                                 Icons.badge_outlined,
                               ),
                               _buildDetailRow(
-                                'VILLAGE / AREA',
+                                tr('village_area').toUpperCase(),
                                 _userData?['village_area'],
                                 Icons.location_city_outlined,
                               ),
                               _buildDetailRow(
-                                'ADDRESS',
+                                tr('address').toUpperCase(),
                                 _userData?['address'],
                                 Icons.home_outlined,
                               ),
@@ -285,12 +293,12 @@ class _AccountPageState extends State<AccountPage>
                               // Provider-specific fields
                               if (isProvider) ...[
                                 _buildDetailRow(
-                                  'SERVICE NAME',
+                                  tr('service_name').toUpperCase(),
                                   _userData?['service_name'],
                                   Icons.build_outlined,
                                 ),
                                 _buildDetailRow(
-                                  'SERVICE CATEGORIES',
+                                  tr('service_category').toUpperCase() + 'S',
                                   (_userData?['categories'] as List?)
                                       ?.join(', '),
                                   Icons.category_outlined,
@@ -311,7 +319,7 @@ class _AccountPageState extends State<AccountPage>
 
                         // Logout button
                         CustomButton(
-                          label: 'Logout',
+                          label: tr('logout'),
                           onPressed:
                               _isLoggingOut ? null : _handleLogout,
                           isLoading: _isLoggingOut,

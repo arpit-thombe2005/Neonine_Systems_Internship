@@ -95,6 +95,55 @@ async function initializeDatabase() {
     } else {
       console.log('\x1b[32m%s\x1b[0m', 'Database tables are already initialized. Skipping migration.');
     }
+
+    // Programmatically ensure the reviews table is created if it doesn't exist
+    await p.request().query(`
+      IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'reviews')
+      BEGIN
+        CREATE TABLE reviews (
+          id                  UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+          request_id          UNIQUEIDENTIFIER UNIQUE NOT NULL REFERENCES service_requests(id) ON DELETE CASCADE,
+          farmer_id           UNIQUEIDENTIFIER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
+          provider_id         UNIQUEIDENTIFIER NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
+          rating              INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+          review_text         NVARCHAR(MAX),
+          created_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+        );
+      END
+    `);
+
+    // Programmatically recreate v_online_providers view to add average ratings
+    await p.request().query(`
+      IF OBJECT_ID('v_online_providers', 'V') IS NOT NULL
+        DROP VIEW v_online_providers;
+    `);
+    await p.request().query(`
+      CREATE VIEW v_online_providers AS
+      SELECT
+          u.id AS user_id,
+          u.full_name,
+          u.phone_number,
+          u.village_area,
+          u.address,
+          u.latitude,
+          u.longitude,
+          u.location_updated_at,
+          sp.id AS provider_id,
+          sp.service_name,
+          sp.is_online,
+          STUFF((
+              SELECT ',' + sc2.name
+              FROM provider_categories pc2
+              JOIN service_categories sc2 ON sc2.id = pc2.category_id
+              WHERE pc2.provider_id = sp.id
+              FOR XML PATH('')
+          ), 1, 1, '') AS categories,
+          COALESCE((SELECT AVG(CAST(rating AS FLOAT)) FROM reviews WHERE provider_id = u.id), 0.0) AS avg_rating,
+          (SELECT COUNT(*) FROM reviews WHERE provider_id = u.id) AS review_count
+      FROM users u
+      JOIN service_providers sp ON sp.user_id = u.id
+      WHERE sp.is_online = 1;
+    `);
   } catch (err) {
     console.error('\x1b[31m%s\x1b[0m', 'Error initializing database schema:', err.message);
   }

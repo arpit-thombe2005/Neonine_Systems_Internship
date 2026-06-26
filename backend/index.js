@@ -65,8 +65,11 @@ app.get('/api/users/phone/:phone', async (req, res) => {
         u.id, u.full_name, u.phone_number, u.user_type, u.village_area, 
         u.address, u.latitude, u.longitude, u.location_updated_at,
         sp.id AS provider_id, sp.service_name, sp.is_online,
-        (SELECT STRING_AGG(CAST(pc.category_id AS VARCHAR), ',')
-         FROM provider_categories pc WHERE pc.provider_id = sp.id
+        (SELECT STUFF((
+           SELECT ',' + CAST(pc.category_id AS VARCHAR)
+           FROM provider_categories pc WHERE pc.provider_id = sp.id
+           FOR XML PATH('')
+         ), 1, 1, '')
         ) AS category_ids_str
       FROM users u
       LEFT JOIN service_providers sp ON sp.user_id = u.id
@@ -181,8 +184,11 @@ app.post('/api/users/register', async (req, res) => {
         u.id, u.full_name, u.phone_number, u.user_type, u.village_area, 
         u.address, u.latitude, u.longitude, u.location_updated_at,
         sp.id AS provider_id, sp.service_name, sp.is_online,
-        (SELECT STRING_AGG(CAST(pc.category_id AS VARCHAR), ',')
-         FROM provider_categories pc WHERE pc.provider_id = sp.id
+        (SELECT STUFF((
+           SELECT ',' + CAST(pc.category_id AS VARCHAR)
+           FROM provider_categories pc WHERE pc.provider_id = sp.id
+           FOR XML PATH('')
+         ), 1, 1, '')
         ) AS category_ids_str
       FROM users u
       LEFT JOIN service_providers sp ON sp.user_id = u.id
@@ -367,6 +373,89 @@ app.post('/api/requests', async (req, res) => {
     return res.status(201).json(result.recordset[0]);
   } catch (err) {
     return sendError(res, 500, 'Failed to create service request', err);
+  }
+});
+
+app.put('/api/requests/:id/status', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  if (!status) {
+    return sendError(res, 400, 'Missing required parameter: status.');
+  }
+  const allowedStatuses = ['pending', 'accepted', 'rejected', 'completed', 'cancelled'];
+  if (!allowedStatuses.includes(status)) {
+    return sendError(res, 400, `Invalid status: must be one of ${allowedStatuses.join(', ')}`);
+  }
+  try {
+    const result = await db.query(`
+      UPDATE service_requests
+      SET status = @status, updated_at = SYSDATETIMEOFFSET()
+      OUTPUT INSERTED.*
+      WHERE id = @id;
+    `, { id, status });
+    if (result.rowsAffected[0] === 0) {
+      return sendError(res, 404, 'Service request not found.');
+    }
+    return res.status(200).json({ success: true, request: result.recordset[0] });
+  } catch (err) {
+    return sendError(res, 500, 'Failed to update service request status', err);
+  }
+});
+
+app.get('/api/farmers/:farmerId/requests', async (req, res) => {
+  const { farmerId } = req.params;
+  try {
+    const result = await db.query(`
+      SELECT sr.id, sr.farmer_id, sr.provider_id, sr.category_id, sr.status, sr.message,
+        sr.farmer_latitude, sr.farmer_longitude, sr.created_at,
+        u.full_name AS provider_name, u.phone_number AS provider_phone,
+        sp.service_name,
+        rev.rating AS review_rating, rev.review_text AS review_text
+      FROM service_requests sr
+      JOIN users u ON sr.provider_id = u.id
+      JOIN service_providers sp ON sp.user_id = u.id
+      LEFT JOIN reviews rev ON rev.request_id = sr.id
+      WHERE sr.farmer_id = @farmerId
+      ORDER BY sr.created_at DESC;
+    `, { farmerId });
+    return res.status(200).json({ success: true, requests: result.recordset });
+  } catch (err) {
+    return sendError(res, 500, 'Failed to retrieve farmer service requests', err);
+  }
+});
+
+app.post('/api/reviews', async (req, res) => {
+  const { request_id, farmer_id, provider_id, rating, review_text } = req.body;
+  if (!request_id || !farmer_id || !provider_id || !rating) {
+    return sendError(res, 400, 'Missing required fields: request_id, farmer_id, provider_id, and rating are mandatory.');
+  }
+  const ratingInt = parseInt(rating, 10);
+  if (isNaN(ratingInt) || ratingInt < 1 || ratingInt > 5) {
+    return sendError(res, 400, 'Invalid rating: must be an integer between 1 and 5.');
+  }
+
+  try {
+    const reqCheck = await db.query('SELECT status FROM service_requests WHERE id = @request_id;', { request_id });
+    if (reqCheck.recordset.length === 0) {
+      return sendError(res, 404, 'Service request not found.');
+    }
+    if (reqCheck.recordset[0].status !== 'completed') {
+      return sendError(res, 400, 'Cannot rate/review a request that is not yet completed.');
+    }
+
+    const result = await db.query(`
+      INSERT INTO reviews (request_id, farmer_id, provider_id, rating, review_text)
+      OUTPUT INSERTED.*
+      VALUES (@request_id, @farmer_id, @provider_id, @ratingInt, @review_text);
+    `, {
+      request_id, farmer_id, provider_id, ratingInt, review_text: review_text || null
+    });
+    return res.status(201).json({ success: true, review: result.recordset[0] });
+  } catch (err) {
+    if (err.message.includes('UNIQUE') || err.message.includes('violates unique constraint')) {
+      return sendError(res, 400, 'This service request has already been reviewed.');
+    }
+    return sendError(res, 500, 'Failed to submit review', err);
   }
 });
 

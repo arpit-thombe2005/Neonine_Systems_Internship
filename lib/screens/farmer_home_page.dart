@@ -4,6 +4,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../services/translation_service.dart';
+import '../widgets/language_selector.dart';
 import 'account_page.dart';
 
 class FarmerHomePage extends StatefulWidget {
@@ -65,6 +67,7 @@ class _FarmerHomePageState extends State<FarmerHomePage>
   @override
   void initState() {
     super.initState();
+    _currentLocation = tr('fetching_location');
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
@@ -184,8 +187,14 @@ class _FarmerHomePageState extends State<FarmerHomePage>
             position: LatLng(lat, lng),
             infoWindow: InfoWindow(
               title: name,
-              snippet: serviceName,
+              snippet: '$serviceName - Tap to request',
+              onTap: () {
+                _showRequestServiceDialog(provider);
+              },
             ),
+            onTap: () {
+              _showRequestServiceDialog(provider);
+            },
             icon: BitmapDescriptor.defaultMarkerWithHue(
                 BitmapDescriptor.hueGreen),
           ),
@@ -220,6 +229,881 @@ class _FarmerHomePageState extends State<FarmerHomePage>
     _mapController = controller;
   }
 
+  void _showRequestServiceDialog(Map<String, dynamic> provider) async {
+    final messageController = TextEditingController();
+    bool isSubmitting = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Color(0xFF141414),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Pull indicator
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Title
+                    Text(
+                      provider['full_name'] ?? 'Provider',
+                      style: GoogleFonts.inter(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+
+                    // Service Name
+                    Text(
+                      provider['service_name'] ?? '',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF4AE54A),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.star_rounded,
+                          color: Color(0xFFFFC107),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          provider['review_count'] != null && provider['review_count'] > 0
+                              ? '${(provider['avg_rating'] is num ? provider['avg_rating'] as num : double.tryParse(provider['avg_rating'].toString()) ?? 0.0).toStringAsFixed(1)} (${provider['review_count']} ${tr('reviews')})'
+                              : tr('no_reviews'),
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Categories
+                    if (provider['categories'] != null) ...[
+                      Text(
+                        '${tr('categories')}:',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: Colors.white38,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        (provider['categories'] is List)
+                            ? (provider['categories'] as List).map((c) => tr(c.toString())).join(', ')
+                            : tr(provider['categories'].toString()),
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+
+                    // Phone Number
+                    if (provider['phone_number'] != null) ...[
+                      Text(
+                        '${tr('phone_number')}:',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: Colors.white38,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '+${provider['phone_number']}',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+
+                    // Message field
+                    Text(
+                      '${tr('optional_message')}:',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: Colors.white38,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E1E1E),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.08),
+                          width: 1,
+                        ),
+                      ),
+                      child: TextField(
+                        controller: messageController,
+                        maxLines: 3,
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: tr('message_placeholder'),
+                          hintStyle: GoogleFonts.inter(
+                            color: Colors.white24,
+                            fontSize: 14,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.all(12),
+                        ),
+                        cursorColor: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+
+                    // Submit button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
+                        ),
+                        onPressed: isSubmitting
+                            ? null
+                            : () async {
+                                setModalState(() => isSubmitting = true);
+                                try {
+                                  final farmerId = await _authService.getUserId();
+                                  final providerUserId = provider['user_id'] ?? provider['id'];
+
+                                  if (farmerId == null || providerUserId == null) {
+                                    throw Exception('Unable to fetch user IDs.');
+                                  }
+
+                                  // Send service request
+                                  final reqResult = await _apiService.createServiceRequest(
+                                    farmerId: farmerId,
+                                    providerId: providerUserId,
+                                    message: messageController.text.trim().isNotEmpty
+                                        ? messageController.text.trim()
+                                        : null,
+                                    farmerLatitude: _latitude,
+                                    farmerLongitude: _longitude,
+                                  );
+
+                                  if (reqResult == null) {
+                                    throw Exception('Failed to send request.');
+                                  }
+
+                                  if (context.mounted) {
+                                    Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          tr('request_success'),
+                                          style: GoogleFonts.inter(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        backgroundColor: Colors.white,
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          '${tr('request_failed')}: ${e.toString().replaceAll('Exception:', '').trim()}',
+                                          style: GoogleFonts.inter(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        backgroundColor: const Color(0xFFFF4444),
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                } finally {
+                                  setModalState(() => isSubmitting = false);
+                                }
+                              },
+                        child: isSubmitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                                ),
+                              )
+                            : Text(
+                                tr('request_service'),
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showRatingDialog(BuildContext context, Map<String, dynamic> request, VoidCallback onSubmitted) {
+    int selectedRating = 5;
+    final commentController = TextEditingController();
+    bool isSubmitting = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Color(0xFF141414),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Pull indicator
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Header
+                    Text(
+                      tr('rate_service'),
+                      style: GoogleFonts.inter(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      request['provider_name'] ?? 'Provider',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: const Color(0xFF4AE54A),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Rating selection
+                    Text(
+                      tr('rating_label'),
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: Colors.white38,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: List.generate(5, (index) {
+                        final starValue = index + 1;
+                        return GestureDetector(
+                          onTap: () {
+                            setModalState(() {
+                              selectedRating = starValue;
+                            });
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 12.0),
+                            child: Icon(
+                              Icons.star_rounded,
+                              color: starValue <= selectedRating
+                                  ? const Color(0xFFFFC107)
+                                  : Colors.white24,
+                              size: 40,
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Comment field
+                    Text(
+                      tr('comment_label'),
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: Colors.white38,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E1E1E),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.08),
+                          width: 1,
+                        ),
+                      ),
+                      child: TextField(
+                        controller: commentController,
+                        maxLines: 3,
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: 'e.g. Friendly service, very punctual!',
+                          hintStyle: GoogleFonts.inter(
+                            color: Colors.white24,
+                            fontSize: 14,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.all(12),
+                        ),
+                        cursorColor: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+
+                    // Submit button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
+                        ),
+                        onPressed: isSubmitting
+                            ? null
+                            : () async {
+                                setModalState(() => isSubmitting = true);
+                                try {
+                                  final farmerId = request['farmer_id'];
+                                  final providerId = request['provider_id'];
+                                  final requestId = request['id'];
+
+                                  if (farmerId == null || providerId == null || requestId == null) {
+                                    throw Exception('Missing details for review.');
+                                  }
+
+                                  final result = await _apiService.submitReview(
+                                    requestId: requestId,
+                                    farmerId: farmerId,
+                                    providerId: providerId,
+                                    rating: selectedRating,
+                                    reviewText: commentController.text.trim().isNotEmpty
+                                        ? commentController.text.trim()
+                                        : null,
+                                  );
+
+                                  if (result == null) {
+                                    throw Exception('Failed to submit review.');
+                                  }
+
+                                  if (context.mounted) {
+                                    Navigator.pop(context); // Close bottom sheet
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          tr('review_submitted'),
+                                          style: GoogleFonts.inter(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        backgroundColor: Colors.white,
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                    );
+                                    // Refresh markers and history list
+                                    onSubmitted();
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Failed: ${e.toString().replaceAll('Exception:', '').trim()}',
+                                          style: GoogleFonts.inter(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        backgroundColor: const Color(0xFFFF4444),
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                } finally {
+                                  setModalState(() => isSubmitting = false);
+                                }
+                              },
+                        child: isSubmitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                                ),
+                              )
+                            : Text(
+                                tr('submit_review'),
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showMyRequestsBottomSheet() async {
+    List<Map<String, dynamic>> requestsList = [];
+    bool isLoading = true;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            // Fetch requests inside the bottom sheet on load
+            if (isLoading) {
+              _authService.getUserId().then((userId) {
+                if (userId != null) {
+                  _apiService.getFarmerRequests(userId).then((requests) {
+                    if (context.mounted) {
+                      setModalState(() {
+                        requestsList = requests;
+                        isLoading = false;
+                      });
+                    }
+                  }).catchError((_) {
+                    if (context.mounted) {
+                      setModalState(() => isLoading = false);
+                    }
+                  });
+                } else {
+                  if (context.mounted) {
+                    setModalState(() => isLoading = false);
+                  }
+                }
+              });
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.75,
+                ),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF141414),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Pull indicator
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Header
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          tr('my_requests'),
+                          style: GoogleFonts.inter(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                        if (!isLoading && requestsList.isNotEmpty)
+                          Text(
+                            '${requestsList.length} items',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: Colors.white38,
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // List
+                    Flexible(
+                      child: isLoading
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 40),
+                                child: SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white38),
+                                  ),
+                                ),
+                              ),
+                            )
+                          : requestsList.isEmpty
+                              ? Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 40),
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(
+                                          Icons.inbox_outlined,
+                                          color: Colors.white24,
+                                          size: 40,
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          tr('no_requests'),
+                                          style: GoogleFonts.inter(
+                                            color: Colors.white30,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : ListView.builder(
+                                  shrinkWrap: true,
+                                  physics: const BouncingScrollPhysics(),
+                                  itemCount: requestsList.length,
+                                  itemBuilder: (context, index) {
+                                    final request = requestsList[index];
+                                    final providerName = request['provider_name'] ?? 'Provider';
+                                    final serviceName = request['service_name'] ?? '';
+                                    final status = request['status'] ?? 'pending';
+                                    final message = request['message'] ?? '';
+                                    final reviewRating = request['review_rating'];
+                                    final reviewText = request['review_text'] ?? '';
+
+                                    // Status color mapping
+                                    Color statusColor;
+                                    Color statusBg;
+                                    switch (status.toLowerCase()) {
+                                      case 'pending':
+                                        statusColor = const Color(0xFFFF9800);
+                                        statusBg = const Color(0xFFFF9800).withOpacity(0.12);
+                                        break;
+                                      case 'accepted':
+                                        statusColor = const Color(0xFF4AE54A);
+                                        statusBg = const Color(0xFF4AE54A).withOpacity(0.12);
+                                        break;
+                                      case 'rejected':
+                                        statusColor = const Color(0xFFFF4444);
+                                        statusBg = const Color(0xFFFF4444).withOpacity(0.12);
+                                        break;
+                                      case 'completed':
+                                        statusColor = const Color(0xFF2196F3);
+                                        statusBg = const Color(0xFF2196F3).withOpacity(0.12);
+                                        break;
+                                      default:
+                                        statusColor = Colors.white54;
+                                        statusBg = Colors.white10;
+                                    }
+
+                                    String statusLabel;
+                                    switch (status.toLowerCase()) {
+                                      case 'pending':
+                                        statusLabel = tr('status_pending');
+                                        break;
+                                      case 'accepted':
+                                        statusLabel = tr('status_accepted');
+                                        break;
+                                      case 'rejected':
+                                        statusLabel = tr('status_rejected');
+                                        break;
+                                      case 'completed':
+                                        statusLabel = tr('status_completed');
+                                        break;
+                                      default:
+                                        statusLabel = status.toUpperCase();
+                                    }
+
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 16),
+                                      padding: const EdgeInsets.all(18),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF1E1E1E),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: Colors.white.withOpacity(0.06),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  providerName,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.white,
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                decoration: BoxDecoration(
+                                                  color: statusBg,
+                                                  borderRadius: BorderRadius.circular(20),
+                                                  border: Border.all(color: statusColor.withOpacity(0.3), width: 1),
+                                                ),
+                                                child: Text(
+                                                  statusLabel,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: statusColor,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          if (serviceName.isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              serviceName,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 13,
+                                                color: const Color(0xFF4AE54A),
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                          if (message.isNotEmpty) ...[
+                                            const SizedBox(height: 12),
+                                            Text(
+                                              message,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 13,
+                                                color: Colors.white54,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            ),
+                                          ],
+                                          if (status.toLowerCase() == 'completed' && reviewRating == null) ...[
+                                            const SizedBox(height: 12),
+                                            SizedBox(
+                                              width: double.infinity,
+                                              child: ElevatedButton(
+                                                onPressed: () {
+                                                  _showRatingDialog(context, request, () {
+                                                    setModalState(() {
+                                                      isLoading = true;
+                                                    });
+                                                  });
+                                                },
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.white,
+                                                  foregroundColor: Colors.black,
+                                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                                  elevation: 0,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius: BorderRadius.circular(10),
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  tr('rate_service'),
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                          if (reviewRating != null) ...[
+                                            const SizedBox(height: 12),
+                                            Container(
+                                              width: double.infinity,
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF141414),
+                                                borderRadius: BorderRadius.circular(10),
+                                                border: Border.all(
+                                                  color: Colors.white.withOpacity(0.04),
+                                                  width: 1,
+                                                ),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: List.generate(5, (index) {
+                                                      return Icon(
+                                                        Icons.star_rounded,
+                                                        color: index < (reviewRating as num).toInt()
+                                                            ? const Color(0xFFFFC107)
+                                                            : Colors.white12,
+                                                        size: 16,
+                                                      );
+                                                    }),
+                                                  ),
+                                                  if (reviewText.toString().isNotEmpty) ...[
+                                                    const SizedBox(height: 6),
+                                                    Text(
+                                                      reviewText.toString(),
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 12,
+                                                        color: Colors.white70,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -234,15 +1118,25 @@ class _FarmerHomePageState extends State<FarmerHomePage>
               children: [
                 const SizedBox(height: 28),
 
-                // Greeting
-                Text(
-                  'Hello $_userName 👋',
-                  style: GoogleFonts.inter(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    letterSpacing: -0.5,
-                  ),
+                // Greeting Header
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${tr('hello')} $_userName 👋',
+                        style: GoogleFonts.inter(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          letterSpacing: -0.5,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const LanguageSelector(),
+                  ],
                 ),
 
                 const SizedBox(height: 6),
@@ -292,7 +1186,7 @@ class _FarmerHomePageState extends State<FarmerHomePage>
                       fontWeight: FontWeight.w400,
                     ),
                     decoration: InputDecoration(
-                      hintText: 'Search Services',
+                      hintText: tr('search_services'),
                       hintStyle: GoogleFonts.inter(
                         color: Colors.white24,
                         fontSize: 15,
@@ -317,7 +1211,7 @@ class _FarmerHomePageState extends State<FarmerHomePage>
 
                 // Map label
                 Text(
-                  'Nearby Services Map:',
+                  tr('nearby_map'),
                   style: GoogleFonts.inter(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -357,7 +1251,7 @@ class _FarmerHomePageState extends State<FarmerHomePage>
                                   ),
                                   const SizedBox(height: 14),
                                   Text(
-                                    'Loading map...',
+                                    tr('loading_map'),
                                     style: GoogleFonts.inter(
                                       color: Colors.white30,
                                       fontSize: 13,
@@ -393,7 +1287,7 @@ class _FarmerHomePageState extends State<FarmerHomePage>
                                       ),
                                       const SizedBox(height: 12),
                                       Text(
-                                        'Enable location to view map',
+                                        tr('enable_location_map'),
                                         style: GoogleFonts.inter(
                                           color: Colors.white30,
                                           fontSize: 14,
@@ -413,39 +1307,70 @@ class _FarmerHomePageState extends State<FarmerHomePage>
         ),
       ),
 
-      // Account floating button — bottom right
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (_, animation, __) => const AccountPage(),
-              transitionsBuilder: (_, animation, __, child) {
-                return SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 1),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                      parent: animation, curve: Curves.easeOutCubic)),
-                  child: child,
+      // Dual floating buttons at bottom
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(left: 32.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // My Requests history button — bottom left
+            FloatingActionButton(
+              heroTag: 'my_requests_btn',
+              onPressed: () {
+                _showMyRequestsBottomSheet();
+              },
+              backgroundColor: const Color(0xFF1A1A1A),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(
+                  color: Colors.white.withOpacity(0.1),
+                  width: 1,
+                ),
+              ),
+              child: const Icon(
+                Icons.history_rounded,
+                color: Colors.white70,
+                size: 28,
+              ),
+            ),
+
+            // Account floating button — bottom right
+            FloatingActionButton(
+              heroTag: 'account_profile_btn',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    pageBuilder: (_, animation, __) => const AccountPage(),
+                    transitionsBuilder: (_, animation, __, child) {
+                      return SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 1),
+                          end: Offset.zero,
+                        ).animate(CurvedAnimation(
+                            parent: animation, curve: Curves.easeOutCubic)),
+                        child: child,
+                      );
+                    },
+                    transitionDuration: const Duration(milliseconds: 400),
+                  ),
                 );
               },
-              transitionDuration: const Duration(milliseconds: 400),
+              backgroundColor: const Color(0xFF1A1A1A),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(
+                  color: Colors.white.withOpacity(0.1),
+                  width: 1,
+                ),
+              ),
+              child: const Icon(
+                Icons.account_circle_outlined,
+                color: Colors.white70,
+                size: 28,
+              ),
             ),
-          );
-        },
-        backgroundColor: const Color(0xFF1A1A1A),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: Colors.white.withOpacity(0.1),
-            width: 1,
-          ),
-        ),
-        child: const Icon(
-          Icons.account_circle_outlined,
-          color: Colors.white70,
-          size: 28,
+          ],
         ),
       ),
     );

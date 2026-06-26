@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:http/http.dart' as http;
 
 /// Service for handling GPS location permissions, fetching coordinates,
 /// and reverse geocoding.
@@ -62,6 +64,33 @@ class LocationService {
   /// Reverse geocode coordinates to a human-readable address.
   /// Returns a formatted string like "Village Name, District".
   Future<String> getAddressFromCoordinates(double latitude, double longitude) async {
+    if (kIsWeb) {
+      try {
+        final url = Uri.parse(
+            'https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=$latitude&longitude=$longitude&localityLanguage=en');
+        final response = await http.get(url);
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final city = data['city'] as String?;
+          final locality = data['locality'] as String?;
+          final principalSubdivision = data['principalSubdivision'] as String?;
+
+          final parts = <String>[
+            if (locality != null && locality.isNotEmpty) locality,
+            if (city != null && city.isNotEmpty) city,
+            if (principalSubdivision != null && principalSubdivision.isNotEmpty) principalSubdivision,
+          ];
+
+          if (parts.isNotEmpty) {
+            return parts.join(', ');
+          }
+        }
+      } catch (e) {
+        debugPrint('Web geocoding error: $e');
+      }
+      return 'Unknown Location';
+    }
+
     try {
       final placemarks = await placemarkFromCoordinates(latitude, longitude);
       if (placemarks.isNotEmpty) {

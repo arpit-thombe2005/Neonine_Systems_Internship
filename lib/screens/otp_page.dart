@@ -6,7 +6,9 @@ import '../services/otp_service.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../services/translation_service.dart';
 import '../widgets/custom_button.dart';
+import '../widgets/language_selector.dart';
 import 'registration_page.dart';
 import 'farmer_home_page.dart';
 import 'provider_home_page.dart';
@@ -304,12 +306,16 @@ class _OtpPageState extends State<OtpPage> with TickerProviderStateMixin {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    SizedBox(
-                        height: MediaQuery.of(context).size.height * 0.12),
+                    const SizedBox(height: 16),
+                    Align(
+                      alignment: Alignment.topRight,
+                      child: const LanguageSelector(),
+                    ),
+                    SizedBox(height: MediaQuery.of(context).size.height * 0.08),
 
                     // Title — centered, matching Figma
                     Text(
-                      'Check your SMS',
+                      tr('check_sms'),
                       textAlign: TextAlign.center,
                       style: GoogleFonts.inter(
                         fontSize: 30,
@@ -332,7 +338,7 @@ class _OtpPageState extends State<OtpPage> with TickerProviderStateMixin {
                           height: 1.5,
                         ),
                         children: [
-                          const TextSpan(text: 'We sent a 6-digit code to\n'),
+                          TextSpan(text: tr('sms_sent_to')),
                           TextSpan(
                             text: _displayPhone,
                             style: const TextStyle(
@@ -372,10 +378,10 @@ class _OtpPageState extends State<OtpPage> with TickerProviderStateMixin {
                     const SizedBox(height: 32),
 
                     // Resend OTP
-                    Center(
+                     Center(
                       child: _secondsRemaining > 0
                           ? Text(
-                              'Resend in ${_secondsRemaining}s',
+                              trWithArgs('resend_in', [_secondsRemaining.toString()]),
                               style: GoogleFonts.inter(
                                 fontSize: 13,
                                 color: Colors.white24,
@@ -401,7 +407,7 @@ class _OtpPageState extends State<OtpPage> with TickerProviderStateMixin {
                                     ),
                                   ),
                                   child: Text(
-                                    _isResending ? 'Sending...' : 'Resend OTP',
+                                    _isResending ? 'Sending...' : tr('resend_otp'),
                                     style: GoogleFonts.inter(
                                       fontSize: 13,
                                       color: Colors.white54,
@@ -417,7 +423,7 @@ class _OtpPageState extends State<OtpPage> with TickerProviderStateMixin {
 
                     // Verify OTP button
                     CustomButton(
-                      label: 'Verify OTP',
+                      label: tr('verify_otp'),
                       onPressed: _isVerifying ? null : _verifyOtp,
                       isLoading: _isVerifying,
                     ),

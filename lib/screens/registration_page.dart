@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
+import '../services/translation_service.dart';
 import '../widgets/custom_button.dart';
+import '../widgets/language_selector.dart';
 import 'farmer_home_page.dart';
 import 'provider_home_page.dart';
 
@@ -28,6 +32,7 @@ class _RegistrationPageState extends State<RegistrationPage>
   final LocationService _locationService = LocationService();
 
   final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _aadhaarController = TextEditingController();
   final TextEditingController _villageController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _serviceNameController = TextEditingController();
@@ -75,6 +80,7 @@ class _RegistrationPageState extends State<RegistrationPage>
   void dispose() {
     _fadeController.dispose();
     _nameController.dispose();
+    _aadhaarController.dispose();
     _villageController.dispose();
     _addressController.dispose();
     _serviceNameController.dispose();
@@ -115,6 +121,16 @@ class _RegistrationPageState extends State<RegistrationPage>
       return;
     }
 
+    final aadhaar = _aadhaarController.text.trim().replaceAll(RegExp(r'\s'), '');
+    if (aadhaar.isEmpty) {
+      _showSnackBar('Please enter your 12-digit Aadhaar Card number.');
+      return;
+    }
+    if (aadhaar.length != 12 || !RegExp(r'^\d{12}$').hasMatch(aadhaar)) {
+      _showSnackBar('Aadhaar number must be exactly 12 digits.');
+      return;
+    }
+
     if (_selectedUserType == 'service_provider') {
       if (_serviceNameController.text.trim().isEmpty) {
         _showSnackBar('Please enter your service name.');
@@ -143,6 +159,7 @@ class _RegistrationPageState extends State<RegistrationPage>
         fullName: _nameController.text.trim(),
         phoneNumber: widget.mobile,
         userType: _selectedUserType == 'farmer' ? 'farmer' : 'service_provider',
+        aadhaarNumber: aadhaar,
         villageArea: _villageController.text.trim().isNotEmpty
             ? _villageController.text.trim()
             : null,
@@ -190,7 +207,25 @@ class _RegistrationPageState extends State<RegistrationPage>
       debugPrint('Registration error: $e');
       if (mounted) {
         setState(() => _isRegistering = false);
-        _showSnackBar('Registration failed. Please try again.');
+        
+        String errorMessage = 'Registration failed. Please try again.';
+        final errorStr = e.toString();
+        
+        if (errorStr.contains('{') && errorStr.contains('}')) {
+          try {
+            final jsonStartIndex = errorStr.indexOf('{');
+            final jsonEndIndex = errorStr.lastIndexOf('}') + 1;
+            final jsonStr = errorStr.substring(jsonStartIndex, jsonEndIndex);
+            final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
+            if (decoded['message'] != null) {
+              errorMessage = decoded['message'];
+            }
+          } catch (_) {}
+        } else if (errorStr.contains('Exception:')) {
+          errorMessage = errorStr.replaceAll('Exception:', '').trim();
+        }
+        
+        _showSnackBar(errorMessage);
       }
     }
   }
@@ -201,6 +236,9 @@ class _RegistrationPageState extends State<RegistrationPage>
     bool readOnly = false,
     String? initialValue,
     int maxLines = 1,
+    TextInputType? keyboardType,
+    int? maxLength,
+    List<TextInputFormatter>? inputFormatters,
   }) {
     if (readOnly && initialValue != null) {
       controller.text = initialValue;
@@ -239,6 +277,9 @@ class _RegistrationPageState extends State<RegistrationPage>
             controller: controller,
             readOnly: readOnly,
             maxLines: maxLines,
+            keyboardType: keyboardType,
+            maxLength: maxLength,
+            inputFormatters: inputFormatters,
             style: GoogleFonts.inter(
               color: readOnly ? Colors.white38 : Colors.white,
               fontSize: 15,
@@ -246,6 +287,7 @@ class _RegistrationPageState extends State<RegistrationPage>
             ),
             decoration: InputDecoration(
               border: InputBorder.none,
+              counterText: '',
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               hintStyle: GoogleFonts.inter(
@@ -324,11 +366,16 @@ class _RegistrationPageState extends State<RegistrationPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: const LanguageSelector(),
+                  ),
+                  const SizedBox(height: 24),
 
                   // Title
                   Text(
-                    'REGISTER YOURSELF:',
+                    tr('register_title'),
                     style: GoogleFonts.inter(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
@@ -341,7 +388,7 @@ class _RegistrationPageState extends State<RegistrationPage>
 
                   // Full Name
                   _buildInputField(
-                    label: 'Full Name',
+                    label: tr('full_name'),
                     controller: _nameController,
                   ),
 
@@ -349,10 +396,23 @@ class _RegistrationPageState extends State<RegistrationPage>
 
                   // Phone Number (read-only, pre-filled)
                   _buildInputField(
-                    label: 'Phone Number',
+                    label: tr('phone_number'),
                     controller: TextEditingController(text: widget.phoneNumber),
                     readOnly: true,
                     initialValue: widget.phoneNumber,
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Aadhaar Card Number
+                  _buildInputField(
+                    label: tr('aadhaar_number'),
+                    controller: _aadhaarController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 12,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                    ],
                   ),
 
                   const SizedBox(height: 20),
@@ -363,7 +423,7 @@ class _RegistrationPageState extends State<RegistrationPage>
                     children: [
                       RichText(
                         text: TextSpan(
-                          text: 'User Type',
+                          text: tr('user_type'),
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             color: Colors.white60,
@@ -402,14 +462,14 @@ class _RegistrationPageState extends State<RegistrationPage>
                               fontSize: 15,
                               fontWeight: FontWeight.w400,
                             ),
-                            items: const [
+                            items: [
                               DropdownMenuItem(
                                 value: 'farmer',
-                                child: Text('Farmer'),
+                                child: Text(tr('farmer')),
                               ),
                               DropdownMenuItem(
                                 value: 'service_provider',
-                                child: Text('Service Provider'),
+                                child: Text(tr('service_provider')),
                               ),
                             ],
                             onChanged: (value) {
@@ -430,7 +490,7 @@ class _RegistrationPageState extends State<RegistrationPage>
                   // Service Provider specific fields
                   if (_selectedUserType == 'service_provider') ...[
                     _buildInputField(
-                      label: 'Service Name',
+                      label: tr('service_name'),
                       controller: _serviceNameController,
                     ),
                     const SizedBox(height: 20),
@@ -441,7 +501,7 @@ class _RegistrationPageState extends State<RegistrationPage>
                       children: [
                         RichText(
                           text: TextSpan(
-                            text: 'Service Category',
+                            text: tr('service_category'),
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               color: Colors.white60,
@@ -506,7 +566,7 @@ class _RegistrationPageState extends State<RegistrationPage>
 
                   // Village/Area — shown for both farmer and service provider
                   _buildOptionalInputField(
-                    label: 'Village / Area',
+                    label: tr('village_area'),
                     controller: _villageController,
                   ),
 
@@ -514,7 +574,7 @@ class _RegistrationPageState extends State<RegistrationPage>
 
                   // Address — shown for both farmer and service provider
                   _buildOptionalInputField(
-                    label: 'Address',
+                    label: tr('address'),
                     controller: _addressController,
                     maxLines: 2,
                   ),
@@ -523,7 +583,7 @@ class _RegistrationPageState extends State<RegistrationPage>
 
                   // Register button
                   CustomButton(
-                    label: 'Register Using OTP',
+                    label: tr('register_btn'),
                     onPressed: _isRegistering ? null : _handleRegister,
                     isLoading: _isRegistering,
                   ),
